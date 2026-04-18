@@ -366,3 +366,40 @@ input:checked + .slider:before {
     backdrop-filter: blur(2px); /* nice visual effect */
     -webkit-backdrop-filter: blur(2px);
 }
+
+/* Remote Mobile Stylus UI */
+#remote-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    touch-action: none; /* Prevent scrolling when drawing */
+    overflow: hidden;
+}
+
+.remote-ui {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 100;
+}
+
+.remote-ui button {
+    padding: 15px 30px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    border-radius: 30px;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.remote-ui button.active {
+    background: #48bfe3;
+    color: #0f1015;
+}

@@ -2,31 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gravity Canvas - Smart Whiteboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Gravity Canvas - PeerJS Whiteboard</title>
     <link rel="stylesheet" href="/src/style.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
-    <!-- Tesseract.js CDN (OCR) -->
+    
+    <!-- Tesseract OCR -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    
+    <!-- WebRTC PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- QR Code Generator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
-    <div id="container">
-        <!-- Canvas for drawing -->
+    
+    <!-- MASTER DISPLAY MODE -->
+    <div id="master-container" class="hidden">
         <canvas id="canvas"></canvas>
         
-        <!-- Start Overlays -->
+        <!-- Connection Lobby -->
         <div id="start-overlay" class="glass-panel">
-            <h1>🎨 Trackpad Whiteboard</h1>
-            <p><strong>Glide</strong> your finger to move the cursor.</p>
-            <p><strong>Hold Spacebar</strong> on the keyboard to Write/Erase.</p>
-            <p>(Or just click and drag normally!)</p>
-            <p style="color: #48bfe3; font-weight: bold; margin-top: 10px;">Select Eraser from the toolbar manually.</p>
-            <button id="start-btn">Start Creating</button>
+            <h1>🎨 Smart Whiteboard Network</h1>
+            <p>Turn your smartphone into a wireless drawing tablet!</p>
+            <div id="qr-container" style="margin: 20px auto; padding: 15px; background: white; width: max-content; border-radius: 10px;"></div>
+            <p id="peer-status" style="color: #ffb5a7; font-weight: bold;">Loading Network ID...</p>
+            
+            <p style="margin-top:20px; font-size: 0.9em; opacity: 0.8;">Or draw natively on trackpad (Spacebar to write)</p>
+            <button id="start-btn">Start Local Mode Instead</button>
         </div>
 
-        <!-- UI Toolbars (hidden initially) -->
+        <!-- UI Toolbars -->
         <div id="ui-container" class="hidden">
-            <!-- Left Toolbar -->
             <div class="toolbar left-toolbar glass-panel">
                 <h3>Tools</h3>
                 <button class="tool-btn active" data-tool="pen">✏️ Pen</button>
@@ -35,7 +42,6 @@
                 <button class="tool-btn action-btn" id="btn-clear" style="margin-top: 5px;">🗑️ Clear All</button>
             </div>
             
-            <!-- Bottom Toolbar -->
             <div class="toolbar bottom-toolbar glass-panel">
                 <div class="color-picker-container">
                     <button class="color-btn active" style="--btn-color: #ff3366;" data-color="#ff3366"></button>
@@ -48,8 +54,8 @@
                 </div>
             </div>
 
-            <!-- Right Toolbar -->
             <div class="toolbar right-toolbar glass-panel">
+                <h3 id="network-ui-status" style="color:#00ff66; margin-bottom:10px;">Local Only</h3>
                 <h3>Environment</h3>
                 <div class="thickness-container" style="margin-bottom: 20px;">
                     <label>Canvas Pattern</label>
@@ -82,9 +88,19 @@
             <button id="close-transcription">Close</button>
         </div>
         
-        <!-- Virtual Cursor Indicator -->
         <div id="cursor"></div>
     </div>
+    
+    <!-- REMOTE STYLUS MODE (PHONE) -->
+    <div id="remote-container" class="hidden">
+        <h2 id="remote-status" style="position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; pointer-events: none;">Connecting...</h2>
+        <div class="remote-ui">
+            <button id="remote-pen-btn" class="active">Pen</button>
+            <button id="remote-eraser-btn">Eraser</button>
+            <button id="remote-clear-btn" style="background:#ff0050;">Clear</button>
+        </div>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
 </body>
 </html>
