@@ -3,34 +3,25 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gravity Canvas - Hand Tracking Drawing App</title>
+    <title>Gravity Canvas - Smart Whiteboard</title>
     <link rel="stylesheet" href="/src/style.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
-    <!-- MediaPipe Vision CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module" crossorigin="anonymous"></script>
-    <!-- Tesseract.js CDN -->
+    <!-- Tesseract.js CDN (OCR) -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
     <div id="container">
-        <!-- Hidden video element for webcam -->
-        <video id="webcam" autoplay playsinline></video>
         <!-- Canvas for drawing -->
         <canvas id="canvas"></canvas>
         
-        <!-- Loading overlay -->
-        <div id="loading" class="glass-panel">
-            <h2>⏳ Loading Camera & AI Models...</h2>
-            <p>Please allow camera permissions.</p>
-        </div>
-
         <!-- Start Overlays -->
-        <div id="start-overlay" class="glass-panel hidden">
-            <h1>🎨 Gravity Canvas</h1>
-            <p><strong>Pinch</strong> Index & Thumb to Draw.</p>
-            <p><strong>Open Palm</strong> (5 fingers) to Erase All.</p>
-            <p>Ready to create? Show your hand to the camera!</p>
-            <button id="start-btn">Start Drawing</button>
+        <div id="start-overlay" class="glass-panel">
+            <h1>🎨 Trackpad Whiteboard</h1>
+            <p><strong>Glide</strong> your finger to move the cursor.</p>
+            <p><strong>Hold Spacebar</strong> on the keyboard to Write/Erase.</p>
+            <p>(Or just click and drag normally!)</p>
+            <p style="color: #48bfe3; font-weight: bold; margin-top: 10px;">Select Eraser from the toolbar manually.</p>
+            <button id="start-btn">Start Creating</button>
         </div>
 
         <!-- UI Toolbars (hidden initially) -->
@@ -40,7 +31,7 @@
                 <h3>Tools</h3>
                 <button class="tool-btn active" data-tool="pen">✏️ Pen</button>
                 <button class="tool-btn" data-tool="eraser">🧽 Eraser</button>
-                <button class="tool-btn action-btn" id="btn-extract">🤖 Read Text</button>
+                <button class="tool-btn action-btn" id="btn-extract" style="background: rgba(72,191,227,0.3);">🤖 Read Text</button>
                 <button class="tool-btn action-btn" id="btn-clear" style="margin-top: 5px;">🗑️ Clear All</button>
             </div>
             
@@ -51,6 +42,7 @@
                     <button class="color-btn" style="--btn-color: #00f0ff;" data-color="#00f0ff"></button>
                     <button class="color-btn" style="--btn-color: #00ff66;" data-color="#00ff66"></button>
                     <button class="color-btn" style="--btn-color: #ff9900;" data-color="#ff9900"></button>
+                    <button class="color-btn" style="--btn-color: #0f1015;" data-color="#0f1015"></button>
                     <button class="color-btn" style="--btn-color: #ffffff;" data-color="#ffffff"></button>
                     <input type="color" id="custom-color" value="#a020f0">
                 </div>
@@ -59,7 +51,6 @@
             <!-- Right Toolbar -->
             <div class="toolbar right-toolbar glass-panel">
                 <h3>Environment</h3>
-                
                 <div class="thickness-container" style="margin-bottom: 20px;">
                     <label>Canvas Pattern</label>
                     <select id="bg-selector" class="dropdown-ui">
