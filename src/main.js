@@ -102,13 +102,15 @@ client.on('message', (topic, message) => {
                 return;
             }
 
-            const absX = data.nx * canvas.width;
-            const absY = data.ny * canvas.height;
+            const maxDimRemote = Math.max(canvas.width, canvas.height);
+            const absX = (data.nx * maxDimRemote) + (canvas.width / 2);
+            const absY = (data.ny * maxDimRemote) + (canvas.height / 2);
 
             if (data.t === 'down') {
                 if (data.tool === "eraser") {
-                    processEraserCollisions(absX, absY, true); // initial blast
+                    processEraserCollisions(absX, absY, true); 
                 } else {
+                    if(activeLines[data.id]) deadLines.push(activeLines[data.id]);
                     activeLines[data.id] = { color: data.c, width: data.w, points: [{ x: absX, y: absY }] };
                 }
             } else if (data.t === 'move') {
@@ -147,9 +149,20 @@ function beginLocalStroke() {
         cursor.style.width = `20px`; cursor.style.height = `20px`;
         cursor.style.setProperty("--current-color", currentColor);
         
+        // Fix for "lines wiping out": Never orphan a line if pointerdown misfires twice!
+        if (activeLines[myClientId]) {
+            activeLines[myClientId].points.forEach(p => p.isBasePoint = false);
+            deadLines.push(activeLines[myClientId]);
+        }
+        
         activeLines[myClientId] = { color: currentColor, width: currentStrokeWidth, points: [] };
     }
-    broadcast({ t: 'down', nx: localPointerX / canvas.width, ny: localPointerY / canvas.height, c: currentColor, w: currentStrokeWidth, tool: currentTool });
+    
+    const maxDimLocal = Math.max(canvas.width, canvas.height);
+    const nx = (localPointerX - (canvas.width / 2)) / maxDimLocal;
+    const ny = (localPointerY - (canvas.height / 2)) / maxDimLocal;
+    
+    broadcast({ t: 'down', nx: nx, ny: ny, c: currentColor, w: currentStrokeWidth, tool: currentTool });
 }
 
 function processLocalMove() {
@@ -158,11 +171,21 @@ function processLocalMove() {
     
     if (isLocalDrawing && activeLines[myClientId]) {
         activeLines[myClientId].points.push({ x: localPointerX, y: localPointerY, vx: 0, vy: 0, isBasePoint: true });
-        broadcast({ t: 'move', nx: localPointerX / canvas.width, ny: localPointerY / canvas.height, tool: "pen" });
+        
+        const maxDimLocal = Math.max(canvas.width, canvas.height);
+        const nx = (localPointerX - (canvas.width / 2)) / maxDimLocal;
+        const ny = (localPointerY - (canvas.height / 2)) / maxDimLocal;
+        
+        broadcast({ t: 'move', nx: nx, ny: ny, tool: "pen" });
     }
     else if (isLocalErasing) {
         processEraserCollisions(localPointerX, localPointerY, false);
-        broadcast({ t: 'move', nx: localPointerX / canvas.width, ny: localPointerY / canvas.height, tool: "eraser" });
+        
+        const maxDimLocal = Math.max(canvas.width, canvas.height);
+        const nx = (localPointerX - (canvas.width / 2)) / maxDimLocal;
+        const ny = (localPointerY - (canvas.height / 2)) / maxDimLocal;
+        
+        broadcast({ t: 'move', nx: nx, ny: ny, tool: "eraser" });
     }
 }
 
