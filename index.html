@@ -101,15 +101,18 @@
             <button class="rm-color-btn" style="background: #00ff66;" data-color="#00ff66"></button>
             <button class="rm-color-btn" style="background: #ff9900;" data-color="#ff9900"></button>
             <button class="rm-color-btn" style="background: #ffffff;" data-color="#ffffff"></button>
+            <!-- Custom Color Picker for Mobile -->
+            <input type="color" id="remote-custom-color" value="#a020f0">
         </div>
 
         <div class="remote-ui">
-            <button id="remote-pen-btn" class="active">Pen</button>
-            <button id="remote-eraser-btn">Eraser</button>
-            <button id="remote-clear-btn" style="background:#ff0050;">Clear</button>
+            <button id="remote-pen-btn" class="active">✏️ Pen</button>
+            <button id="remote-eraser-btn">🧽 Eraser</button>
+            <button id="remote-clear-btn" style="background:rgba(255, 0, 80, 0.4);">🗑️ Clear</button>
         </div>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
+    <!-- Cache Buster ensures mobile browser downloads the newest logic -->
+    <script type="module" src="/src/main.js?v=99"></script>
 </body>
 </html>

@@ -326,47 +326,82 @@ function initRemoteMode(masterId) {
         clrBtn.addEventListener('click', () => conn.send({ type: 'clear' }));
 
         const rmColors = document.querySelectorAll('.rm-color-btn');
+        const customRemoteColor = document.getElementById('remote-custom-color');
+        
         rmColors.forEach(btn => {
             btn.addEventListener('click', () => {
                 rmColors.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 if(conn && conn.open) conn.send({ type: 'color', color: btn.getAttribute('data-color') });
-                
-                // Force pen active when changing color
-                currentRemoteTool = "pen";
-                penBtn.classList.add("active"); errBtn.classList.remove("active");
+                currentRemoteTool = "pen"; penBtn.classList.add("active"); errBtn.classList.remove("active");
             });
         });
 
+        // Custom Color Listener
+        customRemoteColor.addEventListener('input', (e) => {
+            rmColors.forEach(b => b.classList.remove('active'));
+            if(conn && conn.open) conn.send({ type: 'color', color: e.target.value });
+            currentRemoteTool = "pen"; penBtn.classList.add("active"); errBtn.classList.remove("active");
+        });
+
         function sendDataSafely(packet) {
-            try {
-                if (conn && conn.open) conn.send(packet);
-            } catch(e) { console.error("WebRTC send error:", e); }
+            try { if (conn && conn.open) conn.send(packet); } catch(e) {}
         }
+        
+        // VISUAL FEEDBACK: Local Touch Tracker on Mobile screen!
+        const localCursor = document.createElement('div');
+        localCursor.style.position = 'absolute';
+        localCursor.style.width = '30px';
+        localCursor.style.height = '30px';
+        localCursor.style.borderRadius = '50%';
+        localCursor.style.background = 'white';
+        localCursor.style.pointerEvents = 'none';
+        localCursor.style.opacity = '0.7';
+        localCursor.style.transform = 'translate(-50%, -50%)';
+        localCursor.style.zIndex = '9999';
+        localCursor.style.display = 'none';
+        container.appendChild(localCursor);
 
         function sendCoord(e, type) {
             const touch = e.touches[0];
             if (!touch) return;
-            // Send coordinate percent (0.00 to 1.00) relative to device size
+            // Native visualizer updates super fast on mobile screen natively
+            localCursor.style.left = touch.clientX + 'px';
+            localCursor.style.top = touch.clientY + 'px';
+
             const nx = touch.clientX / window.innerWidth;
             const ny = touch.clientY / window.innerHeight;
             sendDataSafely({ type, nx, ny, tool: currentRemoteTool });
         }
 
         container.addEventListener('touchstart', (e) => { 
-            if(e.target.tagName !== "BUTTON") { 
-                e.preventDefault(); sendCoord(e, 'down'); 
+            if(e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT") { 
+                e.preventDefault(); 
+                localCursor.style.display = 'block'; 
+                if(currentRemoteTool === "eraser") {
+                    localCursor.style.border = "4px dashed #ff0050"; 
+                    localCursor.style.background = "rgba(255, 0, 80, 0.2)";
+                    localCursor.style.width = "60px"; localCursor.style.height = "60px";
+                } else {
+                    localCursor.style.border = "none"; 
+                    localCursor.style.background = "white";
+                    localCursor.style.width = "30px"; localCursor.style.height = "30px";
+                }
+                sendCoord(e, 'down'); 
             }
         }, {passive: false});
 
         container.addEventListener('touchmove', (e) => { 
-            if(e.target.tagName !== "BUTTON") { 
+            if(e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT") { 
                 e.preventDefault(); sendCoord(e, 'move'); 
             }
         }, {passive: false});
 
         container.addEventListener('touchend', (e) => { 
-            if(e.target.tagName !== "BUTTON") sendDataSafely({ type: 'up' }); 
+            if(e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT") {
+                localCursor.style.display = 'none';
+                sendDataSafely({ type: 'up' }); 
+            }
         });
     });
 }
