@@ -403,3 +403,28 @@ input:checked + .slider:before {
     background: #48bfe3;
     color: #0f1015;
 }
+
+.remote-colors {
+    position: absolute;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 15px;
+    z-index: 100;
+}
+
+.rm-color-btn {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    cursor: pointer;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    transition: transform 0.2s;
+}
+
+.rm-color-btn.active {
+    border-color: white;
+    transform: scale(1.15);
+}

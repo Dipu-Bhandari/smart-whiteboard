@@ -117,6 +117,11 @@ function initMasterMode() {
 
         conn.on('data', (data) => {
             if (data.type === 'clear') { lines = []; return; }
+            if (data.type === 'color') { 
+                currentColor = data.color; 
+                cursor.style.setProperty("--current-color", currentColor);
+                return;
+            }
             if (data.type === 'down') {
                 currentTool = data.tool;
                 pointerX = data.nx * canvas.width;
@@ -320,13 +325,32 @@ function initRemoteMode(masterId) {
         });
         clrBtn.addEventListener('click', () => conn.send({ type: 'clear' }));
 
+        const rmColors = document.querySelectorAll('.rm-color-btn');
+        rmColors.forEach(btn => {
+            btn.addEventListener('click', () => {
+                rmColors.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                if(conn && conn.open) conn.send({ type: 'color', color: btn.getAttribute('data-color') });
+                
+                // Force pen active when changing color
+                currentRemoteTool = "pen";
+                penBtn.classList.add("active"); errBtn.classList.remove("active");
+            });
+        });
+
+        function sendDataSafely(packet) {
+            try {
+                if (conn && conn.open) conn.send(packet);
+            } catch(e) { console.error("WebRTC send error:", e); }
+        }
+
         function sendCoord(e, type) {
             const touch = e.touches[0];
             if (!touch) return;
             // Send coordinate percent (0.00 to 1.00) relative to device size
             const nx = touch.clientX / window.innerWidth;
             const ny = touch.clientY / window.innerHeight;
-            conn.send({ type, nx, ny, tool: currentRemoteTool });
+            sendDataSafely({ type, nx, ny, tool: currentRemoteTool });
         }
 
         container.addEventListener('touchstart', (e) => { 
@@ -342,7 +366,7 @@ function initRemoteMode(masterId) {
         }, {passive: false});
 
         container.addEventListener('touchend', (e) => { 
-            if(e.target.tagName !== "BUTTON") conn.send({ type: 'up' }); 
+            if(e.target.tagName !== "BUTTON") sendDataSafely({ type: 'up' }); 
         });
     });
 }
