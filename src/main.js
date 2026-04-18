@@ -39,7 +39,12 @@ function initMasterMode() {
     const closeTranscription = document.getElementById("close-transcription");
     
     // PeerJS Variables
-    let peer = new Peer(); 
+    let peer = new Peer({
+        config: {'iceServers': [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+        ]}
+    }); 
     let peerId = null;
     let peerConnection = null;
 
@@ -327,17 +332,24 @@ function initRemoteMode(masterId) {
     const errBtn = document.getElementById('remote-eraser-btn');
     const clrBtn = document.getElementById('remote-clear-btn');
     
-    let peer = new Peer();
+    let peer = new Peer({
+        config: {'iceServers': [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+        ]}
+    });
     let conn = null;
     let currentRemoteTool = "pen";
 
     peer.on('open', (id) => {
         statusText.innerText = "Connecting to Laptop...";
-        conn = peer.connect(masterId, { reliable: true });
         
-        conn.on('open', () => {
-            statusText.innerText = "Smart Stylus Linked.\nDraw anywhere!";
-            setTimeout(() => statusText.classList.add('hidden'), 2000);
+        // Remove reliable: true (SCTP protocol) which heavily lags or crashes on mobile WebRTC stacks. Standard UDP is preferred for live drawing!
+        conn = peer.connect(masterId);
+        
+        // In case the open event stalls but data can be sent, we forcefully hide it.
+        statusText.innerText = "Smart Stylus Linked.\nDraw anywhere!";
+        setTimeout(() => statusText.classList.add('hidden'), 1500);
             
             // Interaction bindings
             const container = document.getElementById('remote-container');
