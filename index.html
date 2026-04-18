@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gravity Canvas - Hand Tracking Drawing App</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <!-- MediaPipe Vision CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="container">
+        <!-- Hidden video element for webcam -->
+        <video id="webcam" autoplay playsinline></video>
+        <!-- Canvas for drawing -->
+        <canvas id="canvas"></canvas>
+        
+        <!-- Loading overlay -->
+        <div id="loading" class="glass-panel">
+            <h2>⏳ Loading Camera & AI Models...</h2>
+            <p>Please allow camera permissions.</p>
+        </div>
+
+        <!-- Start Overlays -->
+        <div id="start-overlay" class="glass-panel hidden">
+            <h1>🎨 Gravity Canvas</h1>
+            <p><strong>Pinch</strong> Index & Thumb to Draw.</p>
+            <p><strong>Open Palm</strong> (5 fingers) to Erase All.</p>
+            <p>Ready to create? Show your hand to the camera!</p>
+            <button id="start-btn">Start Drawing</button>
+        </div>
+
+        <!-- UI Toolbars (hidden initially) -->
+        <div id="ui-container" class="hidden">
+            <!-- Left Toolbar -->
+            <div class="toolbar left-toolbar glass-panel">
+                <h3>Tools</h3>
+                <button class="tool-btn active" data-tool="pen">✏️ Pen</button>
+                <button class="tool-btn" data-tool="eraser">🧽 Eraser</button>
+                <button class="tool-btn action-btn" id="btn-clear">🗑️ Clear All</button>
+            </div>
+            
+            <!-- Bottom Toolbar -->
+            <div class="toolbar bottom-toolbar glass-panel">
+                <div class="color-picker-container">
+                    <button class="color-btn active" style="--btn-color: #ff3366;" data-color="#ff3366"></button>
+                    <button class="color-btn" style="--btn-color: #00f0ff;" data-color="#00f0ff"></button>
+                    <button class="color-btn" style="--btn-color: #00ff66;" data-color="#00ff66"></button>
+                    <button class="color-btn" style="--btn-color: #ff9900;" data-color="#ff9900"></button>
+                    <button class="color-btn" style="--btn-color: #ffffff;" data-color="#ffffff"></button>
+                    <input type="color" id="custom-color" value="#a020f0">
+                </div>
+            </div>
+
+            <!-- Right Toolbar -->
+            <div class="toolbar right-toolbar glass-panel">
+                <h3>Physics</h3>
+                <div class="toggle-container">
+                    <span>Gravity</span>
+                    <label class="switch">
+                        <input type="checkbox" id="gravity-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="thickness-container">
+                    <label>Stroke</label>
+                    <input type="range" id="stroke-width" min="2" max="30" value="8">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Virtual Cursor Indicator -->
+        <div id="cursor"></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
