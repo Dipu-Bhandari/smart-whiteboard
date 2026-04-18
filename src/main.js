@@ -1,3 +1,5 @@
+import { getStroke } from "https://esm.sh/perfect-freehand@1.2.0";
+
 // -----------------------------------------
 // UNIFIED ARCHITECTURE & MQTT NETWORKING
 // -----------------------------------------
@@ -249,8 +251,22 @@ function processEraserCollisions(cx, cy, isRemote) {
 }
 
 // -----------------------------------------
-// PHYSICS RENDER LOOP
+// PHYSICS RENDER LOOP (Perfect Freehand Engine)
 // -----------------------------------------
+function getSvgPathFromStroke(stroke) {
+    if (!stroke.length) return '';
+    const d = stroke.reduce(
+        (acc, [x0, y0], i, arr) => {
+            const [x1, y1] = arr[(i + 1) % arr.length];
+            acc.push(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+            return acc;
+        },
+        ['M', ...stroke[0], 'Q']
+    );
+    d.push('Z');
+    return d.join(' ');
+}
+
 function renderLoop() {
     if (currentBackground === "dark") ctx.fillStyle = "#0f1015"; else ctx.fillStyle = "#f5f5f5"; 
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -269,26 +285,32 @@ function renderLoop() {
     
     for (const line of allLinesToDraw) {
         if (!line || !line.points || line.points.length === 0) continue;
-        ctx.beginPath(); ctx.lineWidth = line.width; ctx.strokeStyle = line.color; ctx.lineCap = "round"; ctx.lineJoin = "round";
-        ctx.moveTo(line.points[0].x, line.points[0].y);
-            
-        if (line.points.length < 3 || gravityEnabled) {
+        
+        // Process Gravity Physics before extracting raw coordinates
+        if (gravityEnabled) {
              for (let i = 1; i < line.points.length; i++) {
                 let pt = line.points[i];
-                if (gravityEnabled && pt.isBasePoint === false) {
+                if (pt.isBasePoint === false) {
                     pt.vy += 0.5; pt.y += pt.vy; pt.x += pt.vx;
                     if (pt.y > canvas.height - 10) { pt.y = canvas.height - 10; pt.vy *= -0.6; pt.vx *= 0.8; }
                 }
-                ctx.lineTo(pt.x, pt.y);
              }
-        } else {
-             for (let i = 1; i < line.points.length - 1; i++) {
-                 let pt = line.points[i]; let nextPt = line.points[i+1];
-                 ctx.quadraticCurveTo(pt.x, pt.y, (pt.x + nextPt.x) / 2, (pt.y + nextPt.y) / 2);
-             }
-             let lastPt = line.points[line.points.length - 1]; ctx.lineTo(lastPt.x, lastPt.y);
         }
-        ctx.stroke();
+        
+        // Butter-smooth Perfect Freehand Outline Engine
+        const rawPoints = line.points.map(p => [p.x, p.y]);
+        const strokeOutline = getStroke(rawPoints, {
+            size: line.width,
+            thinning: 0.6,
+            smoothing: 0.5,
+            streamline: 0.5,
+            simulatePressure: true
+        });
+        
+        const pathData = getSvgPathFromStroke(strokeOutline);
+        const path = new Path2D(pathData);
+        ctx.fillStyle = line.color;
+        ctx.fill(path);
     }
     
     window.requestAnimationFrame(renderLoop);
