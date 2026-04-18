@@ -2,117 +2,99 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Gravity Canvas - PeerJS Whiteboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Gravity Canvas - Universal Sync</title>
     <link rel="stylesheet" href="/src/style.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
     
-    <!-- Tesseract OCR -->
+    <!-- Core Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    
-    <!-- WebRTC PeerJS -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <!-- QR Code Generator -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
 <body>
-    
-    <!-- MASTER DISPLAY MODE -->
-    <div id="master-container" class="hidden">
+    <div id="app-container">
+        <!-- The Shared Canvas -->
         <canvas id="canvas"></canvas>
+
+        <!-- Top Header for Networking -->
+        <div class="top-bar glass-panel">
+            <h2 style="font-size: 1.2rem; margin: 0; background: -webkit-linear-gradient(45deg, #00f0ff, #5e60ce); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Gravity Board</h2>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <span id="network-status">🟠 Disconnected</span>
+                <button id="btn-qr" class="primary-btn">🔗 Link Device</button>
+            </div>
+        </div>
+
+        <!-- Left Toolbar (Tools) -->
+        <div class="toolbar left-toolbar glass-panel">
+            <button class="tool-btn active" data-tool="pen">✏️ Pen</button>
+            <button class="tool-btn" data-tool="eraser">🧽 Eraser</button>
+            <button class="tool-btn action-btn ai-btn" id="btn-extract">🤖 Scan Text</button>
+            <button class="tool-btn action-btn" id="btn-clear" style="background: rgba(255, 51, 102, 0.3);">🗑️ Clear</button>
+        </div>
         
-        <!-- Connection Lobby -->
-        <div id="start-overlay" class="glass-panel">
-            <h1>🎨 Smart Whiteboard Network</h1>
-            <p>Turn your smartphone into a wireless drawing tablet!</p>
-            <div id="qr-container" style="margin: 20px auto; padding: 15px; background: white; width: max-content; border-radius: 10px;"></div>
-            <p id="peer-status" style="color: #ffb5a7; font-weight: bold;">Loading Network ID...</p>
-            
-            <p style="margin-top:20px; font-size: 0.9em; opacity: 0.8;">Or draw natively on trackpad (Spacebar to write)</p>
-            <button id="start-btn">Start Local Mode Instead</button>
-        </div>
-
-        <!-- UI Toolbars -->
-        <div id="ui-container" class="hidden">
-            <div class="toolbar left-toolbar glass-panel">
-                <h3>Tools</h3>
-                <button class="tool-btn active" data-tool="pen">✏️ Pen</button>
-                <button class="tool-btn" data-tool="eraser">🧽 Eraser</button>
-                <button class="tool-btn action-btn" id="btn-extract" style="background: rgba(72,191,227,0.3);">🤖 Read Text</button>
-                <button class="tool-btn action-btn" id="btn-clear" style="margin-top: 5px;">🗑️ Clear All</button>
-            </div>
-            
-            <div class="toolbar bottom-toolbar glass-panel">
-                <div class="color-picker-container">
-                    <button class="color-btn active" style="--btn-color: #ff3366;" data-color="#ff3366"></button>
-                    <button class="color-btn" style="--btn-color: #00f0ff;" data-color="#00f0ff"></button>
-                    <button class="color-btn" style="--btn-color: #00ff66;" data-color="#00ff66"></button>
-                    <button class="color-btn" style="--btn-color: #ff9900;" data-color="#ff9900"></button>
-                    <button class="color-btn" style="--btn-color: #0f1015;" data-color="#0f1015"></button>
-                    <button class="color-btn" style="--btn-color: #ffffff;" data-color="#ffffff"></button>
-                    <input type="color" id="custom-color" value="#a020f0">
-                </div>
-            </div>
-
-            <div class="toolbar right-toolbar glass-panel">
-                <h3 id="network-ui-status" style="color:#00ff66; margin-bottom:10px;">Local Only</h3>
-                <h3>Environment</h3>
-                <div class="thickness-container" style="margin-bottom: 20px;">
-                    <label>Canvas Pattern</label>
-                    <select id="bg-selector" class="dropdown-ui">
-                        <option value="dark">Void Black</option>
-                        <option value="notebook">Ruled Notebook</option>
-                    </select>
-                </div>
-                
-                <h3>Physics</h3>
-                <div class="toggle-container">
-                    <span>Gravity</span>
-                    <label class="switch">
-                        <input type="checkbox" id="gravity-toggle">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div class="thickness-container">
-                    <label>Stroke</label>
-                    <input type="range" id="stroke-width" min="2" max="30" value="8">
-                </div>
+        <!-- Bottom Toolbar (Colors) -->
+        <div class="toolbar bottom-toolbar glass-panel">
+            <div class="color-picker-container">
+                <button class="color-btn active" style="--btn-color: #ff3366;" data-color="#ff3366"></button>
+                <button class="color-btn" style="--btn-color: #00f0ff;" data-color="#00f0ff"></button>
+                <button class="color-btn" style="--btn-color: #00ff66;" data-color="#00ff66"></button>
+                <button class="color-btn" style="--btn-color: #ff9900;" data-color="#ff9900"></button>
+                <button class="color-btn" style="--btn-color: #ffffff;" data-color="#ffffff"></button>
+                <button class="color-btn" style="--btn-color: #0f1015;" data-color="#0f1015"></button>
+                <input type="color" id="custom-color" value="#a020f0">
             </div>
         </div>
 
-        <!-- Transcription Output Panel (hidden initially) -->
-        <div id="transcription-panel" class="glass-panel hidden">
-            <h3>AI Transcription</h3>
-            <div id="ocr-status">Ready...</div>
-            <textarea id="ocr-result" readonly placeholder="Your transcribed text will appear here..."></textarea>
-            <button id="close-transcription">Close</button>
+        <!-- Right Toolbar (Environment) -->
+        <div class="toolbar right-toolbar glass-panel">
+            <div class="thickness-container">
+                <label style="font-size: 0.8rem; opacity:0.8;">Canvas Pattern</label>
+                <select id="bg-selector" class="dropdown-ui">
+                    <option value="dark">Void Black</option>
+                    <option value="notebook">Notebook</option>
+                </select>
+            </div>
+            
+            <div class="toggle-container" style="margin-top: 15px;">
+                <span style="font-size: 0.8rem;">Gravity Engine</span>
+                <label class="switch">
+                    <input type="checkbox" id="gravity-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            
+            <div class="thickness-container" style="margin-top: 15px;">
+                <label style="font-size: 0.8rem; opacity:0.8;">Stroke Size</label>
+                <input type="range" id="stroke-width" min="2" max="30" value="8">
+            </div>
+        </div>
+
+        <!-- QR Code Pairing Overlay -->
+        <div id="qr-overlay" class="overlay hidden">
+            <div class="glass-panel text-center popup">
+                <h2>📱 Pair Phone as Stylus</h2>
+                <p>Scan this to mirror your canvas exactly!</p>
+                <div id="qr-container"></div>
+                <p id="room-code-display" style="color: #00f0ff; letter-spacing: 2px; font-weight: bold; margin-top:15px;"></p>
+                <button id="close-qr" class="primary-btn" style="margin-top: 20px;">Close</button>
+            </div>
+        </div>
+
+        <!-- AI Transcription Overlay -->
+        <div id="transcription-panel" class="overlay hidden">
+            <div class="glass-panel popup">
+                <h3 style="color:#48bfe3;">🧠 AI Analysis</h3>
+                <div id="ocr-status" style="font-size:0.9rem; color:#aaa; margin-bottom:10px;">Ready...</div>
+                <textarea id="ocr-result" readonly placeholder="Extraction results..."></textarea>
+                <button id="close-transcription" class="primary-btn" style="background:#ff3366; float:right;">Close</button>
+            </div>
         </div>
         
         <div id="cursor"></div>
     </div>
     
-    <!-- REMOTE STYLUS MODE (PHONE) -->
-    <div id="remote-container" class="hidden">
-        <h2 id="remote-status" style="position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; pointer-events: none;">Connecting...</h2>
-        
-        <div class="remote-colors">
-            <button class="rm-color-btn active" style="background: #ff3366;" data-color="#ff3366"></button>
-            <button class="rm-color-btn" style="background: #00f0ff;" data-color="#00f0ff"></button>
-            <button class="rm-color-btn" style="background: #00ff66;" data-color="#00ff66"></button>
-            <button class="rm-color-btn" style="background: #ff9900;" data-color="#ff9900"></button>
-            <button class="rm-color-btn" style="background: #ffffff;" data-color="#ffffff"></button>
-            <!-- Custom Color Picker for Mobile -->
-            <input type="color" id="remote-custom-color" value="#a020f0">
-        </div>
-
-        <div class="remote-ui">
-            <button id="remote-pen-btn" class="active">✏️ Pen</button>
-            <button id="remote-eraser-btn">🧽 Eraser</button>
-            <button id="remote-clear-btn" style="background:rgba(255, 0, 80, 0.4);">🗑️ Clear</button>
-        </div>
-    </div>
-
-    <!-- Cache Buster ensures mobile browser downloads the newest logic -->
-    <script type="module" src="/src/main.js?v=99"></script>
+    <script type="module" src="/src/main.js"></script>
 </body>
 </html>

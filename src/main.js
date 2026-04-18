@@ -1,407 +1,359 @@
 // -----------------------------------------
-// URL Router & Dual System Boot
+// UNIFIED ARCHITECTURE & MQTT NETWORKING
 // -----------------------------------------
 const urlParams = new URLSearchParams(window.location.search);
-const remoteId = urlParams.get('remote');
+let roomId = urlParams.get('room');
 
-if (remoteId) {
-    document.getElementById('remote-container').classList.remove('hidden');
-    initRemoteMode(remoteId);
-} else {
-    document.getElementById('master-container').classList.remove('hidden');
-    initMasterMode();
+// If no room exists, create a random secure one and append to URL implicitly
+if (!roomId) {
+    roomId = Math.random().toString(36).substring(2, 10).toUpperCase();
+    window.history.replaceState(null, '', `?room=${roomId}`);
 }
 
+const myClientId = 'user_' + Math.random().toString(36).substring(2, 8);
+const networkTopic = `gravitycanvas/v8_pro/${roomId}`;
+
+// DOM Elements
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const cursor = document.getElementById("cursor");
+const netStatus = document.getElementById("network-status");
+
+// UI Interactivity
+const toolBtns = document.querySelectorAll(".tool-btn[data-tool]");
+const colorBtns = document.querySelectorAll(".color-btn");
+const customColor = document.getElementById("custom-color");
+const strokeWidthInput = document.getElementById("stroke-width");
+const gravityToggle = document.getElementById("gravity-toggle");
+const btnClear = document.getElementById("btn-clear");
+const bgSelector = document.getElementById("bg-selector");
+const btnExtract = document.getElementById("btn-extract");
+
+// State
+let currentTool = "pen"; 
+let currentColor = "#ff3366";
+let currentStrokeWidth = 8;
+let gravityEnabled = false;
+let currentBackground = "dark"; 
+const eraserRadius = 30;
+
+// Universal Pointer State
+let isLocalDrawing = false;
+let isLocalErasing = false;
+let localPointerX = window.innerWidth / 2;
+let localPointerY = window.innerHeight / 2;
+let spaceDown = false; // laptop fallback tracking
+
+// Render Engine Data
+// We track lines multi-user style: "clientId" -> current active line
+let activeLines = {}; 
+// Archive of all completed / dead lines
+let deadLines = [];   
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
 // -----------------------------------------
-// MASTER MODE (Laptop/Projector)
+// MQTT CONNECTION (The Magic Relay)
 // -----------------------------------------
-function initMasterMode() {
-    // DOM Elements
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
-    const startOverlay = document.getElementById("start-overlay");
-    const startBtn = document.getElementById("start-btn");
-    const uiContainer = document.getElementById("ui-container");
-    const cursor = document.getElementById("cursor");
-    
-    // UI Elements
-    const toolBtns = document.querySelectorAll(".tool-btn[data-tool]");
-    const colorBtns = document.querySelectorAll(".color-btn");
-    const customColor = document.getElementById("custom-color");
-    const strokeWidthInput = document.getElementById("stroke-width");
-    const gravityToggle = document.getElementById("gravity-toggle");
-    const btnClear = document.getElementById("btn-clear");
-    const bgSelector = document.getElementById("bg-selector");
-    const btnExtract = document.getElementById("btn-extract");
-    const transcriptionPanel = document.getElementById("transcription-panel");
-    const ocrStatus = document.getElementById("ocr-status");
-    const ocrResult = document.getElementById("ocr-result");
-    const closeTranscription = document.getElementById("close-transcription");
-    
-    // PeerJS Variables
-    let peer = new Peer({
-        config: {'iceServers': [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:global.stun.twilio.com:3478' }
-        ]}
-    }); 
-    let peerId = null;
-    let peerConnection = null;
+netStatus.innerText = "🟡 Connecting...";
 
-    // State
-    let isDrawing = false;
-    let isErasing = false; 
-    let currentTool = "pen"; 
-    let currentColor = "#ff3366";
-    let currentStrokeWidth = 8;
-    let gravityEnabled = false;
-    let currentBackground = "dark"; 
+// wss://broker.emqx.io:8084/mqtt acts as a public lightning fast unblocked WebSockets relay
+const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+    clientId: myClientId,
+    clean: true,
+    connectTimeout: 4000,
+    reconnectPeriod: 1000,
+});
 
-    // Inputs (Network + Trackpad)
-    let pointerX = window.innerWidth / 2;
-    let pointerY = window.innerHeight / 2;
-    let spaceDown = false;
-    let mouseIsDown = false;
-    
-    // Physics / Drawing State
-    let lines = []; 
-    let currentLine = null;
-    let eraserRadius = 30;
-
-    function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-    window.addEventListener("resize", resizeCanvas);
-    resizeCanvas();
-
-    // -----------------------------------------
-    // Network Setup
-    // -----------------------------------------
-    peer.on('open', (id) => {
-        peerId = id;
-        document.getElementById('peer-status').innerText = "Scan to Pair Smart Stylus";
-        
-        // Generate QR
-        const remoteUrl = window.location.href.split('?')[0] + "?remote=" + id;
-        new QRCode(document.getElementById("qr-container"), {
-            text: remoteUrl,
-            width: 200,
-            height: 200,
-            colorDark : "#0f1015",
-            colorLight : "#ffffff",
-            correctLevel : QRCode.CorrectLevel.H
-        });
+client.on('connect', () => {
+    netStatus.innerText = "🟢 Sync Active";
+    client.subscribe(networkTopic, (err) => {
+        if (!err) console.log("Subscribed to absolute sync channel");
     });
+});
 
-    peer.on('connection', (conn) => {
-        peerConnection = conn;
-        document.getElementById('network-ui-status').innerText = "📱 Stylus Paired";
-        
-        // Ensure successful return comms to unstick mobile screens that hung
-        conn.on('open', () => {
-            conn.send({ type: 'ACK' });
-        });
-        // Sometimes open doesn't fire but we can send anyway
-        setTimeout(() => conn.send({ type: 'ACK' }), 1000);
+client.on('error', () => { netStatus.innerText = "🔴 Connection Failed"; });
+client.on('offline', () => { netStatus.innerText = "🟠 Offline"; });
 
-        // Auto-start when remote connects
-        startOverlay.classList.add("hidden");
-        uiContainer.classList.remove("hidden");
-        
-        // Boot render loop only once
-        if(!window.renderLoopRunning) {
-            window.renderLoopRunning = true;
-            window.requestAnimationFrame(renderLoop);
-        }
+function broadcast(payload) {
+    if (client.connected) {
+        payload.id = myClientId; // Stamp origin
+        client.publish(networkTopic, JSON.stringify(payload));
+    }
+}
 
-        conn.on('data', (data) => {
-            if (data.type === 'clear') { lines = []; return; }
-            if (data.type === 'color') { 
-                currentColor = data.color; 
-                cursor.style.setProperty("--current-color", currentColor);
+// Global Inbound Receiver
+client.on('message', (topic, message) => {
+    if (topic === networkTopic) {
+        try {
+            const data = JSON.parse(message.toString());
+            // Ignore echoes of our own data
+            if (data.id === myClientId) return; 
+
+            // Handle Foreign Input Events
+            if (data.t === 'clear') {
+                activeLines = {};
+                deadLines = [];
                 return;
             }
-            if (data.type === 'down') {
-                currentTool = data.tool;
-                pointerX = data.nx * canvas.width;
-                pointerY = data.ny * canvas.height;
-                beginStroke(true);
-            }
-            if (data.type === 'move') {
-                pointerX = data.nx * canvas.width;
-                pointerY = data.ny * canvas.height;
-                cursor.style.display = "block";
-                cursor.style.left = `${pointerX}px`;
-                cursor.style.top = `${pointerY}px`;
-            }
-            if (data.type === 'up') endStroke();
-        });
-    });
 
-    startBtn.addEventListener("click", () => {
-        startOverlay.classList.add("hidden");
-        uiContainer.classList.remove("hidden");
-        if(!window.renderLoopRunning) {
-            window.renderLoopRunning = true;
-            window.requestAnimationFrame(renderLoop);
-        }
-    });
+            const absX = data.nx * canvas.width;
+            const absY = data.ny * canvas.height;
 
-    // -----------------------------------------
-    // Core Engine
-    // -----------------------------------------
-    function beginStroke(isNetwork = false) {
-        if (currentTool === "eraser") {
-            isErasing = true; isDrawing = false; currentLine = null;
-            cursor.classList.add("erasing"); cursor.classList.remove("drawing");
-            cursor.style.width = `${eraserRadius * 2}px`; cursor.style.height = `${eraserRadius * 2}px`;
-        } else {
-            isDrawing = true; isErasing = false;
-            cursor.classList.add("drawing"); cursor.classList.remove("erasing");
-            cursor.style.width = `20px`; cursor.style.height = `20px`;
-            
-            currentLine = { color: currentColor, width: currentStrokeWidth, points: [] };
-            lines.push(currentLine);
-        }
-    }
-
-    function endStroke() {
-        if (!spaceDown && !mouseIsDown) {
-            isDrawing = false; isErasing = false; currentLine = null;
-            cursor.classList.remove("drawing", "erasing");
-            cursor.style.width = `20px`; cursor.style.height = `20px`;
-        }
-    }
-
-    window.addEventListener("keydown", (e) => {
-        if (e.code === "Space" && uiContainer.classList.contains("hidden") === false) { if (!spaceDown) { e.preventDefault(); spaceDown = true; beginStroke(); } }
-    });
-    window.addEventListener("keyup", (e) => { if (e.code === "Space") { spaceDown = false; endStroke(); } });
-    canvas.addEventListener("pointerdown", (e) => { mouseIsDown = true; pointerX = e.clientX; pointerY = e.clientY; beginStroke(); });
-    canvas.addEventListener("pointermove", (e) => { pointerX = e.clientX; pointerY = e.clientY; cursor.style.display = "block"; cursor.style.left = `${pointerX}px`; cursor.style.top = `${pointerY}px`; });
-    window.addEventListener("pointerup", () => { mouseIsDown = false; endStroke(); });
-
-    function processEraserCollisions(cx, cy) {
-        let newLinesList = [];
-        for (const line of lines) {
-            let currentSegment = [];
-            for (const pt of line.points) {
-                const dist = Math.sqrt(Math.pow(pt.x - cx, 2) + Math.pow(pt.y - cy, 2));
-                if (dist < eraserRadius) {
-                    if (currentSegment.length > 0) { newLinesList.push({ color: line.color, width: line.width, points: currentSegment }); currentSegment = []; }
-                } else currentSegment.push(pt);
-            }
-            if (currentSegment.length > 0) newLinesList.push({ color: line.color, width: line.width, points: currentSegment });
-        }
-        lines = newLinesList;
-    }
-
-    function renderLoop() {
-        if (isDrawing && currentLine) currentLine.points.push({ x: pointerX, y: pointerY, vx: 0, vy: 0, isBasePoint: true });
-        if (isErasing) processEraserCollisions(pointerX, pointerY);
-
-        if (currentBackground === "dark") ctx.fillStyle = "#0f1015"; else ctx.fillStyle = "#f5f5f5"; 
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        if (currentBackground === "notebook") {
-            ctx.lineWidth = 1;
-            for(let y = 100; y < canvas.height - 20; y += 70) {
-                 ctx.strokeStyle = "#8ecae6"; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-                 ctx.beginPath(); ctx.moveTo(0, y + 10); ctx.lineTo(canvas.width, y + 10); ctx.stroke();
-            }
-            ctx.beginPath(); ctx.strokeStyle = "#ffb5a7"; ctx.lineWidth = 2; ctx.moveTo(120, 0); ctx.lineTo(120, canvas.height); ctx.stroke();
-        }
-        
-        for (const line of lines) {
-            if (line.points.length === 0) continue;
-            ctx.beginPath(); ctx.lineWidth = line.width; ctx.strokeStyle = line.color; ctx.lineCap = "round"; ctx.lineJoin = "round";
-            ctx.moveTo(line.points[0].x, line.points[0].y);
-                
-            if (line.points.length < 3 || gravityEnabled) {
-                 for (let i = 1; i < line.points.length; i++) {
-                    let pt = line.points[i];
-                    if (gravityEnabled && (!pt.isBasePoint || !isDrawing)) {
-                        pt.vy += 0.5; pt.y += pt.vy; pt.x += pt.vx;
-                        if (pt.y > canvas.height - 10) { pt.y = canvas.height - 10; pt.vy *= -0.6; pt.vx *= 0.8; }
-                    }
-                    ctx.lineTo(pt.x, pt.y);
-                 }
-            } else {
-                 for (let i = 1; i < line.points.length - 1; i++) {
-                     let pt = line.points[i]; let nextPt = line.points[i+1];
-                     ctx.quadraticCurveTo(pt.x, pt.y, (pt.x + nextPt.x) / 2, (pt.y + nextPt.y) / 2);
-                 }
-                 let lastPt = line.points[line.points.length - 1]; ctx.lineTo(lastPt.x, lastPt.y);
-            }
-            ctx.stroke();
-        }
-        if (!isDrawing && lines.length > 0) lines[lines.length - 1].points.forEach(p => p.isBasePoint = false);
-        window.requestAnimationFrame(renderLoop);
-    }
-
-    btnClear.addEventListener("click", () => lines = []);
-    toolBtns.forEach(btn => btn.addEventListener("click", () => { toolBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); currentTool = btn.getAttribute("data-tool"); }));
-    colorBtns.forEach(btn => btn.addEventListener("click", () => { colorBtns.forEach(b => b.classList.remove("active")); btn.classList.add("active"); currentColor = btn.getAttribute("data-color"); cursor.style.setProperty("--current-color", currentColor); currentTool = "pen"; toolBtns[0].classList.add("active"); toolBtns[1].classList.remove("active"); }));
-    customColor.addEventListener("input", (e) => { currentColor = e.target.value; colorBtns.forEach(b => b.classList.remove("active")); cursor.style.setProperty("--current-color", currentColor); });
-    strokeWidthInput.addEventListener("input", (e) => currentStrokeWidth = parseInt(e.target.value));
-    bgSelector.addEventListener("change", (e) => currentBackground = e.target.value);
-    gravityToggle.addEventListener("change", (e) => { gravityEnabled = e.target.checked; if (gravityEnabled) lines.forEach(line => line.points.forEach(p => { p.isBasePoint = false; if(p.vy===0) p.vy=(Math.random()-0.5)*3; if(p.vx===0) p.vx=(Math.random()-0.5)*4; })); });
-
-    btnExtract.addEventListener("click", async () => {
-        transcriptionPanel.classList.remove("hidden"); ocrStatus.innerText = "⏳ Initializing Tesseract AI... Please wait."; ocrResult.value = "";
-        const offCanvas = document.createElement("canvas"); offCanvas.width = canvas.width; offCanvas.height = canvas.height; const offCtx = offCanvas.getContext("2d");
-        offCtx.fillStyle = "#ffffff"; offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
-        
-        for (const line of lines) {
-            if (line.points.length === 0) continue;
-            offCtx.beginPath(); offCtx.lineWidth = line.width; offCtx.strokeStyle = "#000"; offCtx.lineCap = "round"; offCtx.lineJoin = "round";
-            offCtx.moveTo(line.points[0].x, line.points[0].y);
-            if (line.points.length < 3) { for (let i=1; i<line.points.length; i++) offCtx.lineTo(line.points[i].x, line.points[i].y); } 
-            else { for (let i=1; i<line.points.length-1; i++) offCtx.quadraticCurveTo(line.points[i].x, line.points[i].y, (line.points[i].x+line.points[i+1].x)/2, (line.points[i].y+line.points[i+1].y)/2); offCtx.lineTo(line.points[line.points.length-1].x, line.points[line.points.length-1].y); }
-            offCtx.stroke();
-        }
-        try {
-            ocrStatus.innerText = "🧠 Analyzing handwriting...";
-            const { data: { text } } = await Tesseract.recognize(offCanvas.toDataURL("image/png"), 'eng', { logger: m => console.log(m) });
-            if (text && text.trim().length > 0) { ocrStatus.innerText = "✅ Extraction Complete!"; ocrResult.value = text; } 
-            else ocrStatus.innerText = "⚠️ No readable text found.";
-        } catch (err) { ocrStatus.innerText = "❌ Error occurred during OCR processing."; }
-    });
-    closeTranscription.addEventListener("click", () => transcriptionPanel.classList.add("hidden"));
-}
-
-// -----------------------------------------
-// REMOTE STYLUS MODE (Smartphone)
-// -----------------------------------------
-function initRemoteMode(masterId) {
-    const statusText = document.getElementById('remote-status');
-    const penBtn = document.getElementById('remote-pen-btn');
-    const errBtn = document.getElementById('remote-eraser-btn');
-    const clrBtn = document.getElementById('remote-clear-btn');
-    
-    // Safety check - ignore if we already booted
-    if(window.remoteBooted) return;
-    window.remoteBooted = true;
-
-    statusText.innerHTML = `<span class="pulse">📡</span> Waiting for Network...`;
-
-    let peer = new Peer({
-        config: {'iceServers': [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:global.stun.twilio.com:3478' }
-        ]}
-    });
-    let conn = null;
-    let currentRemoteTool = "pen";
-
-    peer.on('open', (id) => {
-        statusText.innerHTML = `<span class="pulse">⚡</span> Pairing with Screen...`;
-        
-        conn = peer.connect(masterId);
-        
-        // This relies on the new ACK system from the laptop assuring us it's working
-        conn.on('data', (data) => {
-            if(data.type === 'ACK') {
-                statusText.classList.add('hidden'); // Drop the loading text completely!
-            }
-        });
-
-        // Failsafe: Hide it anyway after 3s so the user can draw regardless of DataChannel state hooks
-        setTimeout(() => {
-            statusText.classList.add('hidden');
-        }, 3000);
-            
-        // Interaction bindings on the massive black canvas
-        const container = document.getElementById('remote-container');
-        
-        penBtn.addEventListener('click', () => { 
-            currentRemoteTool = "pen"; 
-            penBtn.classList.add("active"); errBtn.classList.remove("active");
-        });
-        errBtn.addEventListener('click', () => { 
-            currentRemoteTool = "eraser"; 
-            errBtn.classList.add("active"); penBtn.classList.remove("active");
-        });
-        clrBtn.addEventListener('click', () => conn.send({ type: 'clear' }));
-
-        const rmColors = document.querySelectorAll('.rm-color-btn');
-        const customRemoteColor = document.getElementById('remote-custom-color');
-        
-        rmColors.forEach(btn => {
-            btn.addEventListener('click', () => {
-                rmColors.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                if(conn && conn.open) conn.send({ type: 'color', color: btn.getAttribute('data-color') });
-                currentRemoteTool = "pen"; penBtn.classList.add("active"); errBtn.classList.remove("active");
-            });
-        });
-
-        // Custom Color Listener
-        customRemoteColor.addEventListener('input', (e) => {
-            rmColors.forEach(b => b.classList.remove('active'));
-            if(conn && conn.open) conn.send({ type: 'color', color: e.target.value });
-            currentRemoteTool = "pen"; penBtn.classList.add("active"); errBtn.classList.remove("active");
-        });
-
-        function sendDataSafely(packet) {
-            try { if (conn && conn.open) conn.send(packet); } catch(e) {}
-        }
-        
-        // VISUAL FEEDBACK: Local Touch Tracker on Mobile screen!
-        const localCursor = document.createElement('div');
-        localCursor.style.position = 'absolute';
-        localCursor.style.width = '30px';
-        localCursor.style.height = '30px';
-        localCursor.style.borderRadius = '50%';
-        localCursor.style.background = 'white';
-        localCursor.style.pointerEvents = 'none';
-        localCursor.style.opacity = '0.7';
-        localCursor.style.transform = 'translate(-50%, -50%)';
-        localCursor.style.zIndex = '9999';
-        localCursor.style.display = 'none';
-        container.appendChild(localCursor);
-
-        function sendCoord(e, type) {
-            const touch = e.touches[0];
-            if (!touch) return;
-            // Native visualizer updates super fast on mobile screen natively
-            localCursor.style.left = touch.clientX + 'px';
-            localCursor.style.top = touch.clientY + 'px';
-
-            const nx = touch.clientX / window.innerWidth;
-            const ny = touch.clientY / window.innerHeight;
-            sendDataSafely({ type, nx, ny, tool: currentRemoteTool });
-        }
-
-        container.addEventListener('touchstart', (e) => { 
-            if(e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT") { 
-                e.preventDefault(); 
-                localCursor.style.display = 'block'; 
-                if(currentRemoteTool === "eraser") {
-                    localCursor.style.border = "4px dashed #ff0050"; 
-                    localCursor.style.background = "rgba(255, 0, 80, 0.2)";
-                    localCursor.style.width = "60px"; localCursor.style.height = "60px";
+            if (data.t === 'down') {
+                if (data.tool === "eraser") {
+                    processEraserCollisions(absX, absY, true); // initial blast
                 } else {
-                    localCursor.style.border = "none"; 
-                    localCursor.style.background = "white";
-                    localCursor.style.width = "30px"; localCursor.style.height = "30px";
+                    activeLines[data.id] = { color: data.c, width: data.w, points: [{ x: absX, y: absY }] };
                 }
-                sendCoord(e, 'down'); 
+            } else if (data.t === 'move') {
+                if (data.tool === "eraser") {
+                    processEraserCollisions(absX, absY, true);
+                } else if (activeLines[data.id]) {
+                    activeLines[data.id].points.push({ x: absX, y: absY });
+                }
+            } else if (data.t === 'up') {
+                if (activeLines[data.id]) {
+                    activeLines[data.id].points.forEach(p => p.isBasePoint = false);
+                    deadLines.push(activeLines[data.id]);
+                    delete activeLines[data.id];
+                }
             }
-        }, {passive: false});
+        } catch (e) {
+            console.error(e);
+        }
+    }
+});
 
-        container.addEventListener('touchmove', (e) => { 
-            if(e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT") { 
-                e.preventDefault(); sendCoord(e, 'move'); 
-            }
-        }, {passive: false});
 
-        container.addEventListener('touchend', (e) => { 
-            if(e.target.tagName !== "BUTTON" && e.target.tagName !== "INPUT") {
-                localCursor.style.display = 'none';
-                sendDataSafely({ type: 'up' }); 
-            }
-        });
-    });
+// -----------------------------------------
+// INPUT HANDLERS (Mouse, Touch, Stylus, Trackpad)
+// -----------------------------------------
+function beginLocalStroke() {
+    if (currentTool === "eraser") {
+        isLocalErasing = true; isLocalDrawing = false;
+        if(activeLines[myClientId]) { deadLines.push(activeLines[myClientId]); delete activeLines[myClientId]; }
+        
+        cursor.classList.add("erasing"); cursor.classList.remove("drawing");
+        cursor.style.width = `${eraserRadius * 2}px`; cursor.style.height = `${eraserRadius * 2}px`;
+    } else {
+        isLocalDrawing = true; isLocalErasing = false;
+        cursor.classList.add("drawing"); cursor.classList.remove("erasing");
+        cursor.style.width = `20px`; cursor.style.height = `20px`;
+        cursor.style.setProperty("--current-color", currentColor);
+        
+        activeLines[myClientId] = { color: currentColor, width: currentStrokeWidth, points: [] };
+    }
+    broadcast({ t: 'down', nx: localPointerX / canvas.width, ny: localPointerY / canvas.height, c: currentColor, w: currentStrokeWidth, tool: currentTool });
 }
+
+function processLocalMove() {
+    cursor.style.display = "block";
+    cursor.style.left = `${localPointerX}px`; cursor.style.top = `${localPointerY}px`;
+    
+    if (isLocalDrawing && activeLines[myClientId]) {
+        activeLines[myClientId].points.push({ x: localPointerX, y: localPointerY, vx: 0, vy: 0, isBasePoint: true });
+        broadcast({ t: 'move', nx: localPointerX / canvas.width, ny: localPointerY / canvas.height, tool: "pen" });
+    }
+    else if (isLocalErasing) {
+        processEraserCollisions(localPointerX, localPointerY, false);
+        broadcast({ t: 'move', nx: localPointerX / canvas.width, ny: localPointerY / canvas.height, tool: "eraser" });
+    }
+}
+
+function endLocalStroke() {
+    isLocalDrawing = false; isLocalErasing = false;
+    cursor.classList.remove("drawing", "erasing");
+    cursor.style.width = `20px`; cursor.style.height = `20px`;
+    
+    if (activeLines[myClientId]) {
+        activeLines[myClientId].points.forEach(p => p.isBasePoint = false);
+        deadLines.push(activeLines[myClientId]);
+        delete activeLines[myClientId];
+    }
+    broadcast({ t: 'up' });
+}
+
+// Hardware Pointers (Mouse/Touch universally handled by pointer events)
+canvas.addEventListener("pointerdown", (e) => { 
+    if (e.pointerType === "touch") e.preventDefault(); // crucial for touch
+    localPointerX = e.clientX; localPointerY = e.clientY; 
+    beginLocalStroke(); 
+    processLocalMove();
+});
+
+canvas.addEventListener("pointermove", (e) => { 
+    if (e.pointerType === "touch") e.preventDefault();
+    localPointerX = e.clientX; localPointerY = e.clientY; 
+    processLocalMove(); 
+});
+
+window.addEventListener("pointerup", () => { endLocalStroke(); });
+window.addEventListener("pointercancel", () => { endLocalStroke(); });
+
+// Laptop Spacebar-Clutch specific fallback
+window.addEventListener("keydown", (e) => {
+    if (e.code === "Space") { if (!spaceDown) { e.preventDefault(); spaceDown = true; beginLocalStroke(); } }
+});
+window.addEventListener("keyup", (e) => { if (e.code === "Space") { spaceDown = false; endLocalStroke(); } });
+
+// -----------------------------------------
+// ERASER ALGORITHM
+// -----------------------------------------
+function processEraserCollisions(cx, cy, isRemote) {
+    let newDeadLines = [];
+    
+    // Check dead pool
+    for (const line of deadLines) {
+        let currentSegment = [];
+        for (const pt of line.points) {
+            const dist = Math.sqrt(Math.pow(pt.x - cx, 2) + Math.pow(pt.y - cy, 2));
+            if (dist < eraserRadius) {
+                if (currentSegment.length > 0) { newDeadLines.push({ color: line.color, width: line.width, points: currentSegment }); currentSegment = []; }
+            } else currentSegment.push(pt);
+        }
+        if (currentSegment.length > 0) newDeadLines.push({ color: line.color, width: line.width, points: currentSegment });
+    }
+    deadLines = newDeadLines;
+    
+    // Check active pools of OTHERS (can't erase your own active stroke visually nicely without breaking array)
+    // Actually we can, we just drop the points or split the active. But practically you only erase dead paths.
+}
+
+// -----------------------------------------
+// PHYSICS RENDER LOOP
+// -----------------------------------------
+function renderLoop() {
+    if (currentBackground === "dark") ctx.fillStyle = "#0f1015"; else ctx.fillStyle = "#f5f5f5"; 
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Env Draw
+    if (currentBackground === "notebook") {
+        ctx.lineWidth = 1;
+        for(let y = 100; y < canvas.height - 20; y += 70) {
+             ctx.strokeStyle = "#8ecae6"; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+             ctx.beginPath(); ctx.moveTo(0, y + 10); ctx.lineTo(canvas.width, y + 10); ctx.stroke();
+        }
+        ctx.beginPath(); ctx.strokeStyle = "#ffb5a7"; ctx.lineWidth = 2; ctx.moveTo(120, 0); ctx.lineTo(120, canvas.height); ctx.stroke();
+    }
+    
+    const allLinesToDraw = deadLines.concat(Object.values(activeLines));
+    
+    for (const line of allLinesToDraw) {
+        if (!line || !line.points || line.points.length === 0) continue;
+        ctx.beginPath(); ctx.lineWidth = line.width; ctx.strokeStyle = line.color; ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.moveTo(line.points[0].x, line.points[0].y);
+            
+        if (line.points.length < 3 || gravityEnabled) {
+             for (let i = 1; i < line.points.length; i++) {
+                let pt = line.points[i];
+                if (gravityEnabled && pt.isBasePoint === false) {
+                    pt.vy += 0.5; pt.y += pt.vy; pt.x += pt.vx;
+                    if (pt.y > canvas.height - 10) { pt.y = canvas.height - 10; pt.vy *= -0.6; pt.vx *= 0.8; }
+                }
+                ctx.lineTo(pt.x, pt.y);
+             }
+        } else {
+             for (let i = 1; i < line.points.length - 1; i++) {
+                 let pt = line.points[i]; let nextPt = line.points[i+1];
+                 ctx.quadraticCurveTo(pt.x, pt.y, (pt.x + nextPt.x) / 2, (pt.y + nextPt.y) / 2);
+             }
+             let lastPt = line.points[line.points.length - 1]; ctx.lineTo(lastPt.x, lastPt.y);
+        }
+        ctx.stroke();
+    }
+    
+    window.requestAnimationFrame(renderLoop);
+}
+
+// Boot loop
+window.requestAnimationFrame(renderLoop);
+
+// -----------------------------------------
+// UI EVENT BINDINGS
+// -----------------------------------------
+btnClear.addEventListener("click", () => { activeLines = {}; deadLines = []; broadcast({ t: 'clear' }); });
+
+toolBtns.forEach(btn => btn.addEventListener("click", () => { 
+    toolBtns.forEach(b => b.classList.remove("active")); 
+    btn.classList.add("active"); 
+    currentTool = btn.getAttribute("data-tool"); 
+    if(currentTool === "pen") { cursor.style.border = "2px solid white"; cursor.style.background = "var(--current-color)"; }
+}));
+
+colorBtns.forEach(btn => btn.addEventListener("click", () => { 
+    colorBtns.forEach(b => b.classList.remove("active")); 
+    btn.classList.add("active"); 
+    currentColor = btn.getAttribute("data-color"); 
+    cursor.style.setProperty("--current-color", currentColor); 
+    
+    currentTool = "pen"; toolBtns[0].classList.add("active"); toolBtns[1].classList.remove("active"); 
+}));
+
+customColor.addEventListener("input", (e) => { 
+    currentColor = e.target.value; 
+    colorBtns.forEach(b => b.classList.remove("active")); 
+    cursor.style.setProperty("--current-color", currentColor); 
+});
+
+strokeWidthInput.addEventListener("input", (e) => currentStrokeWidth = parseInt(e.target.value));
+bgSelector.addEventListener("change", (e) => currentBackground = e.target.value);
+
+gravityToggle.addEventListener("change", (e) => { 
+    gravityEnabled = e.target.checked; 
+    if (gravityEnabled) {
+        deadLines.forEach(line => line.points.forEach(p => { 
+            if(p.vy===undefined || p.vy===0) p.vy=(Math.random()-0.5)*3; 
+            if(p.vx===undefined || p.vx===0) p.vx=(Math.random()-0.5)*4; 
+        })); 
+    }
+});
+
+// Settings & Extractor Overlays
+const qrBtn = document.getElementById('btn-qr');
+const qrOverlay = document.getElementById('qr-overlay');
+const closeQr = document.getElementById('close-qr');
+const roomDisplay = document.getElementById('room-code-display');
+
+qrBtn.addEventListener('click', () => {
+    qrOverlay.classList.remove("hidden");
+    roomDisplay.innerText = "Shared Room ID: " + roomId;
+    document.getElementById("qr-container").innerHTML = ""; // clear old
+    new QRCode(document.getElementById("qr-container"), {
+        text: window.location.href, // Has the room query automatically
+        width: 200, height: 200, colorDark : "#0f1015", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.H
+    });
+});
+closeQr.addEventListener('click', () => qrOverlay.classList.add('hidden'));
+
+// Transcription UI
+const transcriptionPanel = document.getElementById("transcription-panel");
+const ocrStatus = document.getElementById("ocr-status");
+const ocrResult = document.getElementById("ocr-result");
+
+btnExtract.addEventListener("click", async () => {
+    transcriptionPanel.classList.remove("hidden"); ocrStatus.innerText = "⏳ Initializing Tesseract AI..."; ocrResult.value = "";
+    const offCanvas = document.createElement("canvas"); offCanvas.width = canvas.width; offCanvas.height = canvas.height; const offCtx = offCanvas.getContext("2d");
+    offCtx.fillStyle = "#ffffff"; offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+    
+    // Draw dead lines
+    for (const line of deadLines) {
+        if (!line || !line.points || line.points.length === 0) continue;
+        offCtx.beginPath(); offCtx.lineWidth = line.width; offCtx.strokeStyle = "#000"; offCtx.lineCap = "round"; offCtx.lineJoin = "round";
+        offCtx.moveTo(line.points[0].x, line.points[0].y);
+        for (let i=1; i<line.points.length; i++) offCtx.lineTo(line.points[i].x, line.points[i].y);
+        offCtx.stroke();
+    }
+    try {
+        ocrStatus.innerText = "🧠 Analyzing handwriting...";
+        const { data: { text } } = await Tesseract.recognize(offCanvas.toDataURL("image/png"), 'eng', { logger: m => console.log(m) });
+        if (text && text.trim().length > 0) { ocrStatus.innerText = "✅ Extraction Complete!"; ocrResult.value = text; } 
+        else ocrStatus.innerText = "⚠️ No readable text found.";
+    } catch (err) { ocrStatus.innerText = "❌ Error occurred during OCR processing."; }
+});
+document.getElementById("close-transcription").addEventListener('click', () => transcriptionPanel.classList.add('hidden'));
