@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet" />
     <!-- MediaPipe Vision CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module" crossorigin="anonymous"></script>
+    <!-- Tesseract.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
     <div id="container">
@@ -38,7 +40,8 @@
                 <h3>Tools</h3>
                 <button class="tool-btn active" data-tool="pen">✏️ Pen</button>
                 <button class="tool-btn" data-tool="eraser">🧽 Eraser</button>
-                <button class="tool-btn action-btn" id="btn-clear">🗑️ Clear All</button>
+                <button class="tool-btn action-btn" id="btn-extract">🤖 Read Text</button>
+                <button class="tool-btn action-btn" id="btn-clear" style="margin-top: 5px;">🗑️ Clear All</button>
             </div>
             
             <!-- Bottom Toolbar -->
@@ -55,6 +58,16 @@
 
             <!-- Right Toolbar -->
             <div class="toolbar right-toolbar glass-panel">
+                <h3>Environment</h3>
+                
+                <div class="thickness-container" style="margin-bottom: 20px;">
+                    <label>Canvas Pattern</label>
+                    <select id="bg-selector" class="dropdown-ui">
+                        <option value="dark">Void Black</option>
+                        <option value="notebook">Ruled Notebook</option>
+                    </select>
+                </div>
+                
                 <h3>Physics</h3>
                 <div class="toggle-container">
                     <span>Gravity</span>
@@ -68,6 +81,14 @@
                     <input type="range" id="stroke-width" min="2" max="30" value="8">
                 </div>
             </div>
+        </div>
+
+        <!-- Transcription Output Panel (hidden initially) -->
+        <div id="transcription-panel" class="glass-panel hidden">
+            <h3>AI Transcription</h3>
+            <div id="ocr-status">Ready...</div>
+            <textarea id="ocr-result" readonly placeholder="Your transcribed text will appear here..."></textarea>
+            <button id="close-transcription">Close</button>
         </div>
         
         <!-- Virtual Cursor Indicator -->
